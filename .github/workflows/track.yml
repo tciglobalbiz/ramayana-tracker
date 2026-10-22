@@ -14,38 +14,3 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
-      fail-fast: false
-      matrix:
-        city:
-          - mumbai
-          - national-capital-region-ncr
-          - bengaluru
-          - hyderabad
-          - pune
-          - kolkata
-          - chennai
-          - ahmedabad
-    name: ${{ matrix.city }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-
-      - name: Install packages
-        run: pip install -r requirements.txt
-
-      - name: Install browser
-        run: python -m playwright install --with-deps chromium
-
-      - name: Run tracker
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          CITIES: ${{ matrix.city }}
-          MAX_SHOWS: "25"
-          HEADLESS: "false"
-        run: xvfb-run --auto-servernum python tracker.py
