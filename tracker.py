@@ -58,7 +58,11 @@ DRY_RUN = not (SUPABASE_URL and SUPABASE_KEY)
 # Reads the showtimes data bundle (window.__INITIAL_STATE__) and lists every show
 EXTRACT_SHOWS_JS = r"""
 async ({url, slug}) => {
-  const t = await (await fetch(url, {credentials: 'include'})).text();
+  // Use the page Chrome already loaded; only fetch it again if the data isn't in it
+  let t = document.documentElement.outerHTML;
+  if (t.indexOf('window.__INITIAL_STATE__') < 0) {
+    try { t = await (await fetch(url, {credentials: 'include'})).text(); } catch (e) {}
+  }
   let i = t.indexOf('window.__INITIAL_STATE__');
   if (i < 0) return {error: 'showtimes data not found on page'};
   i = t.indexOf('{', i);
@@ -296,11 +300,29 @@ def main():
                 list_url = (f"https://in.bookmyshow.com/movies/{city}/{MOVIE_SLUG}/buytickets/"
                             f"{EVENT_CODE}/{date}?etCodes=*&language={language}&refEventCode={EVENT_CODE}")
                 print(f"=== {city.title()} | {date} | {language} (all formats) ===")
-                page.goto(list_url, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(3000)
-                result = page.evaluate(EXTRACT_SHOWS_JS, {"url": list_url, "slug": MOVIE_SLUG})
+                result = {"error": "not tried"}
+                for attempt in range(1, 4):
+                    try:
+                        page.goto(list_url, wait_until="domcontentloaded", timeout=60000)
+                        page.wait_for_timeout(3000 * attempt)
+                        result = page.evaluate(EXTRACT_SHOWS_JS, {"url": list_url, "slug": MOVIE_SLUG})
+                    except Exception as e:
+                        result = {"error": f"page failed to load ({type(e).__name__})"}
+                    if not result.get("error"):
+                        break
+                    print(f"  attempt {attempt}: {result['error']}")
+                    page.wait_for_timeout(random.randint(10, 20) * 1000)
                 if result.get("error"):
-                    print("  Problem reading showtimes:", result["error"])
+                    # Record what BookMyShow actually showed, to tell a block apart from a real change
+                    try:
+                        body = " ".join(page.inner_text("body").split())[:300]
+                        print(f"  Page title: {page.title()!r}")
+                        print(f"  Page says: {body!r}")
+                        os.makedirs("debug", exist_ok=True)
+                        page.screenshot(path=f"debug/{city}-{date}.png")
+                    except Exception as e:
+                        print(f"  (could not capture page: {e})")
+                    print("  Problem reading showtimes - skipped\n")
                     continue
 
                 # BookMyShow jumps to the next open date when a date has no shows - keep only the date we asked for
