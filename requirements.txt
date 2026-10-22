@@ -1,0 +1,4 @@
+playwright
+supabase
+python-dotenv
+tzdata
