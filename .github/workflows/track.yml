@@ -12,7 +12,21 @@ concurrency:
 jobs:
   track:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        city:
+          - mumbai
+          - national-capital-region-ncr
+          - bengaluru
+          - hyderabad
+          - pune
+          - kolkata
+          - chennai
+          - ahmedabad
+    name: ${{ matrix.city }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +45,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          MAX_SHOWS: "40"
+          CITIES: ${{ matrix.city }}
+          MAX_SHOWS: "25"
           HEADLESS: "false"
         run: xvfb-run --auto-servernum python tracker.py
