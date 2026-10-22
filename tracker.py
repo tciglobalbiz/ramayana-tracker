@@ -34,6 +34,10 @@ CITIES = [                             # BookMyShow city names, as they appear i
     "mumbai", "national-capital-region-ncr", "bengaluru", "hyderabad",
     "pune", "kolkata", "chennai", "ahmedabad",
 ]
+# GitHub runs one city per job (set by the workflow). Locally you can do the same:
+#   set CITIES=mumbai   (Windows)   then   py -3.13 tracker.py
+if os.getenv("CITIES"):
+    CITIES = [c.strip() for c in os.getenv("CITIES").split(",") if c.strip()]
 DATES = ["20261104", "20261105", "20261106", "20261107", "20261108"]  # paid previews + opening weekend
 CHAINS = ["PVR", "INOX", "CINEPOLIS"]  # national chains only
 
@@ -131,7 +135,7 @@ async ({url, slug}) => {
 COUNT_SEATS_JS = r"""
 () => {
   if (!window.Konva || !Konva.stages.length) return null;
-  const s = Konva.stages[0];
+  const s = Konva.stages[Konva.stages.length - 1];   // newest map, never a leftover one
   const headers = s.find('Text')
     .map(t => ({y: t.getClientRect().y, m: String(t.text()).match(/₹\s*([\d,]+)/)}))
     .filter(h => h.m)
@@ -238,11 +242,17 @@ def count_show(page, city, date, show, listings):
     for code in codes:
         url = (f"https://in.bookmyshow.com/movies/{city}/seat-layout/"
                f"{code}/{show['venueCode']}/{show['sessionId']}/{date}")
-        ready = "() => window.Konva && Konva.stages.length && Konva.stages[0].find('Rect').length > 20"
-        ready_or_error = ("() => (window.Konva && Konva.stages.length && Konva.stages[0].find('Rect').length > 20)"
+        ready = ("() => window.Konva && Konva.stages.length && "
+                 "Konva.stages[Konva.stages.length - 1].find('Rect').length > 20")
+        ready_or_error = (f"() => ({ready[6:]})"
                           " || (document.body && document.body.innerText.includes('Something is not right'))")
         try:
+            # Blank the tab first so the previous show's seat map can never be counted again
+            page.goto("about:blank")
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            if show["sessionId"] not in page.url:
+                problem = "BookMyShow redirected to a different page"
+                continue
             try:
                 page.wait_for_function(ready_or_error, timeout=10000)
                 if page.evaluate("() => document.body.innerText.includes('Something is not right')"):
@@ -277,7 +287,10 @@ def main():
         page = context.new_page()
 
         done = set()   # never count the same show twice in one run
-        jobs = [(c, d, l) for c in CITIES for d in DATES for l in LANGUAGES]
+        last_sig = None   # previous show's numbers, to catch a stale seat map
+        today = datetime.now(IST).strftime("%Y%m%d")
+        dates = [d for d in DATES if d >= today]   # skip dates that are already over
+        jobs = [(c, d, l) for c in CITIES for d in dates for l in LANGUAGES]
         for city, date, language in jobs:
             if True:
                 list_url = (f"https://in.bookmyshow.com/movies/{city}/{MOVIE_SLUG}/buytickets/"
@@ -309,6 +322,18 @@ def main():
                     chain = chain_of(show["venueName"])
                     listings = result.get("listings", {})
                     counts, problem, used = count_show(page, city, date, show, listings)
+                    if counts:
+                        sig = (show["venueCode"], counts["sold"], counts["total"], counts["gross"])
+                        if sig == last_sig:
+                            # Identical to the previous show at the same theatre - almost always a
+                            # leftover map. Wait and read it once more before trusting it.
+                            page.wait_for_timeout(5000)
+                            counts, problem, used = count_show(page, city, date, show, listings)
+                            if counts and (show["venueCode"], counts["sold"], counts["total"],
+                                           counts["gross"]) == last_sig:
+                                print("      (same numbers as the previous show after a re-check - kept)")
+                        if counts:
+                            last_sig = (show["venueCode"], counts["sold"], counts["total"], counts["gross"])
                     if used:
                         show["eventCode"] = used
                         # Opened only with the 3D listing -> it's a 3D show (e.g. "IMAX" -> "IMAX 3D")
