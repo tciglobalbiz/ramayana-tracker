@@ -1,11 +1,16 @@
 name: Ramayana tracker
 
 on:
-  schedule:
-    # UTC. Starts every hour at :07; each run keeps going ~50 min, doing a pass every 15 min.
-    # Opening-weekend dates every 15 min, later dates once an hour, all cities re-checked twice a day.
-    - cron: "7 * * * *"
+  # AUTOMATIC TRACKING IS OFF. To switch it on (e.g. when the website goes live),
+  # remove the "# " from the two lines below. Each hourly run then keeps going ~50 min,
+  # doing a pass every 15 min (opening-weekend dates every 15 min, later dates hourly).
+  # schedule:
+  #   - cron: "7 * * * *"
   workflow_dispatch:
+    inputs:
+      loop_minutes:
+        description: "Minutes to keep tracking (0 = one full pass, 50 = like the hourly run)"
+        default: "0"
 
 concurrency:
   group: ramayana-tracker
@@ -37,9 +42,10 @@ jobs:
           PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
-          LOOP_MINUTES: "50"
+          LOOP_MINUTES: ${{ github.event_name == 'schedule' && '50' || inputs.loop_minutes || '0' }}
           INTERVAL_MINUTES: "15"
           FAR_EVERY_MINUTES: "60"
+          PARALLEL: "8"
           HEADLESS: "false"
           PYTHONUNBUFFERED: "1"
         run: xvfb-run --auto-servernum python district_tracker.py
