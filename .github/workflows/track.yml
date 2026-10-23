@@ -2,8 +2,7 @@ name: Ramayana tracker
 
 on:
   schedule:
-    # UTC. Every 3 hours at :17 (IST 05:47, 08:47, 11:47 ... 02:47)
-    - cron: "17 */3 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -13,21 +12,7 @@ concurrency:
 jobs:
   track:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
-    strategy:
-      fail-fast: false        # one city failing never stops the others
-      matrix:
-        city:
-          - mumbai
-          - national-capital-region-ncr
-          - bengaluru
-          - hyderabad
-          - pune
-          - kolkata
-          - chennai
-          - ahmedabad
-    name: ${{ matrix.city }}
-
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -42,20 +27,13 @@ jobs:
       - name: Install browser
         run: python -m playwright install --with-deps chromium
 
-      - name: Run tracker
+      - name: Run District tracker
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          CITIES: ${{ matrix.city }}
-          MAX_SHOWS: "25"
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
           HEADLESS: "false"
-        run: xvfb-run --auto-servernum python tracker.py
-
-      - name: Save screenshots of any blocked pages
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-${{ matrix.city }}
-          path: debug/
-          if-no-files-found: ignore
-          retention-days: 7
+          PYTHONUNBUFFERED: "1"
+        run: xvfb-run --auto-servernum python district_tracker.py
