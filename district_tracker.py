@@ -94,7 +94,7 @@ async ({reqs, headers, parallel}) => {
       try {
         const h = Object.assign({}, headers, q.headers || {}, {'x-request-id': crypto.randomUUID()});
         const r = await fetch(q.url, {method: q.method || 'GET', credentials: 'include', headers: h,
-                                      body: q.body || undefined});
+                                      body: q.body || undefined, signal: AbortSignal.timeout(30000)});
         out[i] = {status: r.status, text: await r.text()};
       } catch (e) { out[i] = {status: 0, text: String(e)}; }
     }
@@ -365,11 +365,16 @@ class District:
             if not todo:
                 break
             got = []
-            for i in range(0, len(todo), PARALLEL * 4):
+            step, last_note = PARALLEL * 4, time.monotonic()
+            for i in range(0, len(todo), step):
                 chunk = todo[i:i + PARALLEL * 4]
                 out = self.page.evaluate(FETCH_MANY_JS, {"reqs": [reqs[j] for j in chunk],
                                                          "headers": self.headers, "parallel": PARALLEL})
                 got += list(zip(chunk, out))
+                if len(todo) > 200 and time.monotonic() - last_note > 60:
+                    ok = sum(1 for _, r in got if r["status"] in (200, 204))
+                    print(f"    ...{len(got):,}/{len(todo):,} done ({ok:,} ok)")
+                    last_note = time.monotonic()
                 time.sleep(random.uniform(*PAUSE))
             retry, need_token = [], False
             for j, r in got:
